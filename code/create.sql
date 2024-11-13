@@ -137,19 +137,39 @@ CREATE TABLE Loan (
 
 /* Constrain for dueDate and returnDate */
 CREATE OR REPLACE TRIGGER trg_check_loan_dates
-BEFORE INSERT OR UPDATE ON Loan
+BEFORE UPDATE ON Loan
 FOR EACH ROW
 BEGIN
-    IF :NEW.dueDate <= :NEW.loanDate THEN
-        RAISE_APPLICATION_ERROR(-20008, 'Due Date must be after Loan Date.');
-    END IF;
-
     IF :NEW.returnDate <= :NEW.loanDate THEN
         RAISE_APPLICATION_ERROR(-20009, 'Return Date must be after Loan Date.');
     END IF;
 END;
 
+-- Trigger when a loan is created, check "borrowRule" and "availability"
+CREATE OR REPLACE TRIGGER trg_check_borrowRule_availability
+BEFORE INSERT ON Loan
+FOR EACH ROW
+DECLARE
+    v_availability NUMBER;
+    v_borrowRule VARCHAR2(10);
+BEGIN
+    -- First check availability of resource
+    SELECT availability INTO v_availability FROM Resources WHERE resourceId = :NEW.resourceId;
+    IF v_availability = 0 THEN
+        RAISE_APPLICATION_ERROR(-20008, 'Resource is not available for short loan.');
+    END IF;
 
+    -- Then check borrowRule and set dueDate accordingly
+    SELECT borrowRule INTO v_borrowRule FROM Resources WHERE resourceId = :NEW.resourceId;
+    IF v_borrowRule = 'short' THEN
+        :NEW.dueDate := :NEW.loanDate + 3;
+    ELSIF v_borrowRule = 'onSite' THEN
+        :NEW.dueDate := :NEW.loanDate;
+    ELSE
+        :NEW.dueDate := :NEW.loanDate + 21;
+    END IF;
+END;
+/
 
 
 

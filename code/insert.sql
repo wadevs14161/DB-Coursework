@@ -168,7 +168,3 @@ WHERE resourceId = 'a846cbd1-b13f-4d50-9283-ff8dfe5f39db';
 UPDATE Member
 SET totalLoan = totalLoan + 1
 WHERE memberId = '082413d4-7897-4ef9-b69e-c7d65514d6c4';
-
-
-
-
