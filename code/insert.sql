@@ -93,7 +93,7 @@ VALUES ('679b9a02-d568-4c0f-9c57-75c3f21e9c64', 'eBook', NULL, 'normal', 1, 1, N
 INSERT INTO Resources (resourceId, resourceType, locationId, borrowRule, digitalCopy, availability, classNumber, resourceTitle)
 VALUES ('cf3fd2b0-4c71-4f95-9253-f325fb15b7ac', 'device', NULL, 'onSite', NULL, 1, NULL, 'Projector for Class');
 
-
+/* Deprecated: 21-Nov-2024, replace with trg_check_loan_insert
 /* 5. Inserting some rows into the Loan table to simulate some user borrow a resource */
 
 -- Alan Li borrow Advanced Mathematics
@@ -168,3 +168,48 @@ WHERE resourceId = 'a846cbd1-b13f-4d50-9283-ff8dfe5f39db';
 UPDATE Member
 SET totalLoan = totalLoan + 1
 WHERE memberId = '082413d4-7897-4ef9-b69e-c7d65514d6c4';
+*/
+
+-- 21-Nov-2024, codes to replace the above steps
+-- Make a loan for John Doe borrowing a device
+INSERT INTO Loan (loanId, memberId, resourceId)
+VALUES
+('a909f05a-9e03-487a-a7d5-2322585e5eab', 'b1c3fc3a-1f13-4db5-9b6e-531458773c96', 'cf3fd2b0-4c71-4f95-9253-f325fb15b7ac');
+
+-- Test return of John Doe's device
+-- Update the return date same as the loan date
+UPDATE Loan
+SET returnDate = (SELECT loanDate FROM Loan WHERE loanId = 'a909f05a-9e03-487a-a7d5-2322585e5eab')
+WHERE loanId = 'a909f05a-9e03-487a-a7d5-2322585e5eab';
+
+
+-- Make a loan for John Doe borrowing a book
+INSERT INTO Loan (loanId, memberId, resourceId)
+VALUES
+('b1c3fc3a-1f13-4db5-9b6e-531458773c96', 'b1c3fc3a-1f13-4db5-9b6e-531458773c96', 'da72a314-d592-432b-920b-8bfc5a9f0a3e');
+
+-- Test return of John Doe's book (Due date = loan date + 21 days)
+-- Case1: Return date >= loan date and Return date <= due date (valid)
+UPDATE Loan
+SET returnDate = (SELECT loanDate FROM Loan WHERE loanId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96') + 1
+WHERE loanId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96';
+
+-- Case2: Return date = loan date (valid)
+UPDATE Loan
+SET returnDate = (SELECT loanDate FROM Loan WHERE loanId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96')
+WHERE loanId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96';
+
+-- Case3: Return date before loan date (Invalid)
+UPDATE Loan
+SET returnDate = (SELECT loanDate FROM Loan WHERE loanId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96') - 1
+WHERE loanId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96';
+
+-- Case4: Return date after due date (valid), update table Member to increase totalFine by (returnDate - dueDate)
+-- Mock the return date to be 3 days after the due date
+UPDATE Loan
+SET returnDate = (SELECT dueDate FROM Loan WHERE loanId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96') + 3
+WHERE loanId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96';
+
+UPDATE Member
+SET totalFine = totalFine + (SELECT (returnDate - dueDate) FROM Loan WHERE loanId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96')
+WHERE memberId = (SELECT memberId FROM Loan WHERE loanId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96');

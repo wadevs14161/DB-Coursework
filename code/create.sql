@@ -135,43 +135,78 @@ CREATE TABLE Loan (
 );
 
 
-/* Constrain for dueDate and returnDate */
-CREATE OR REPLACE TRIGGER trg_check_loan_dates
-BEFORE UPDATE ON Loan
-FOR EACH ROW
-BEGIN
-    IF :NEW.returnDate <= :NEW.loanDate THEN
-        RAISE_APPLICATION_ERROR(-20009, 'Return Date must be after Loan Date.');
-    END IF;
-END;
-
--- Trigger when a loan is created, check "borrowRule" and "availability"
-CREATE OR REPLACE TRIGGER trg_check_borrowRule_availability
+-- Trigger when a loan is about to be inserted, 
+-- check member's if totalFine and totalLoan exceed limit
+-- (totalFine < 10 and totalLoan < 5 for memberType='Student'), (totalFine < 10 and totalLoan < 10 for memberType='Staff'),
+-- check resource's availability
+-- above two conditions are met, then update loan's dueDate
+CREATE OR REPLACE TRIGGER trg_check_loan_insert
 BEFORE INSERT ON Loan
 FOR EACH ROW
 DECLARE
-    v_availability NUMBER;
-    v_borrowRule VARCHAR2(10);
+    v_member_eligibility NUMBER;
+    v_resource_availability NUMBER;
 BEGIN
-    -- First check availability of resource
-    SELECT availability INTO v_availability FROM Resources WHERE resourceId = :NEW.resourceId;
-    IF v_availability = 0 THEN
-        RAISE_APPLICATION_ERROR(-20008, 'Resource is not available for short loan.');
+    -- Check member eligibility
+    SELECT COUNT(*) INTO v_member_eligibility
+    FROM Member
+    WHERE memberId = :NEW.memberId
+    AND (
+        (memberType = 'Student' AND totalFine < 10 AND totalLoan < 5)
+        OR (memberType = 'Staff' AND totalFine < 10 AND totalLoan < 10)
+    );
+
+    IF v_member_eligibility = 0 THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Member is not eligible for loan.');
     END IF;
 
-    -- Then check borrowRule and set dueDate accordingly
-    SELECT borrowRule INTO v_borrowRule FROM Resources WHERE resourceId = :NEW.resourceId;
-    IF v_borrowRule = 'short' THEN
-        :NEW.dueDate := :NEW.loanDate + 3;
-    ELSIF v_borrowRule = 'onSite' THEN
-        :NEW.dueDate := :NEW.loanDate;
-    ELSE
-        :NEW.dueDate := :NEW.loanDate + 21;
+    -- Check resource availability
+    SELECT availability INTO v_resource_availability
+    FROM Resources
+    WHERE resourceId = :NEW.resourceId;
+
+    IF v_resource_availability = 0 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'Resource is not available for loan.');
     END IF;
+
+    -- Update dueDate based on resource's borrowRule
+    SELECT 
+        CASE 
+            WHEN r.borrowRule = 'normal' THEN SYSDATE + 21
+            WHEN r.borrowRule = 'short' THEN SYSDATE + 3
+            WHEN r.borrowRule = 'onSite' THEN SYSDATE
+            ELSE SYSDATE
+        END
+    INTO :NEW.dueDate
+    FROM Resources r
+    WHERE r.resourceId = :NEW.resourceId;
 END;
 /
 
+/* Constrain for dueDate and returnDate */
+-- returnDate must be after Loan Date for books and eBooks
+-- returnDate must be same as Loan Date for onSite resources
+CREATE OR REPLACE TRIGGER trg_check_loan_dates
+BEFORE UPDATE ON Loan
+FOR EACH ROW
+DECLARE
+    v_borrow_rule VARCHAR2(20);
+BEGIN
+    IF :NEW.returnDate IS NOT NULL THEN
+        IF :NEW.returnDate < :NEW.loanDate THEN
+            RAISE_APPLICATION_ERROR(-20008, 'Return Date must be after Loan Date.');
+        ELSIF :NEW.returnDate <> :NEW.loanDate THEN
+            SELECT borrowRule INTO v_borrow_rule
+            FROM Resources
+            WHERE resourceId = :NEW.resourceId;
 
+            IF v_borrow_rule = 'onSite' THEN
+                RAISE_APPLICATION_ERROR(-20009, 'Return Date must be same as Loan Date for onSite resources.');
+            END IF;
+        END IF;
+    END IF;
+END;
+/
 
 
 ------------------- Reservation table -------------------
